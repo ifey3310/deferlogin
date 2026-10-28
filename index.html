@@ -387,18 +387,24 @@
             setTimeout(()=> { t.style.opacity = 0; t.style.transform = 'translate(-50%, 0)'; }, 3000);
         }
 
-        // === API LOGIC ===
+                // === API LOGIC ===
         async function loadData() {
             document.getElementById('loader').style.display = 'flex';
             try {
                 const r = await fetch(FIREBASE_URL);
-if (!r.ok) throw new Error("Firebase load failed");
+                if (!r.ok) throw new Error("Firebase load failed");
 
-const content = await r.json();
-DATA = content || {};
+                const content = await r.json();
+                DATA = content || {};
                 if(!DATA.keys) DATA.keys = {};
-                if(!DATA.blacklist) DATA.blacklist = [];
-                
+
+                // *** FIX BUG #1: APK menulis blacklist sebagai MAP {id: true} ***
+                // Konversi ke ARRAY untuk tampilan agar .join() tidak error
+                if (DATA.blacklist && typeof DATA.blacklist === 'object' && !Array.isArray(DATA.blacklist)) {
+                    DATA.blacklist = Object.keys(DATA.blacklist);
+                }
+                if (!DATA.blacklist) DATA.blacklist = [];
+
                 renderAll();
                 toast("Data Synced Successfully");
             } catch(e) {
@@ -409,7 +415,7 @@ DATA = content || {};
             }
         }
 
-        async function saveAllData() {
+                async function saveAllData() {
             // CONFIG
             if(!DATA.config) DATA.config = {};
             DATA.config.maintenance = document.getElementById('c_maint').value === 'true';
@@ -425,8 +431,11 @@ DATA = content || {};
             if(!DATA.security) DATA.security = {};
             DATA.security.packageName = document.getElementById('s_pkg').value;
             DATA.security.killOnMismatch = document.getElementById('s_kill').value === 'true';
+            // *** FIX BUG #1: simpan blacklist sebagai MAP {id: true} — format yang dibaca APK ***
             const bl = document.getElementById('s_bl').value.trim();
-            DATA.blacklist = bl ? bl.split('\n').map(x=>x.trim()).filter(x=>x) : [];
+            const blList = bl ? bl.split('\n').map(x=>x.trim()).filter(x=>x) : [];
+            DATA.blacklist = {};
+            blList.forEach(id => { DATA.blacklist[id] = true; });
 
             // UI
             if(!DATA.ui) DATA.ui = {};
@@ -472,18 +481,18 @@ DATA = content || {};
             DATA.update.version = document.getElementById('up_ver').value;
             DATA.update.url = document.getElementById('up_url').value;
 
-
-            // Push to GitLab
+            // Push to Firebase
             document.getElementById('loader').style.display = 'flex';
             try {
-                await fetch(FIREBASE_URL, {
-  method: "PUT",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(DATA, null, 2)
-});
+                // *** FIX BUG #2: tangkap response fetch ke variabel r ***
+                const r = await fetch(FIREBASE_URL, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(DATA, null, 2)
+                });
                 
-                if(!r.ok) throw new Error(r.statusText || "GitLab API Error");
-                toast("Changes Saved to GitLab!");
+                if(!r.ok) throw new Error(r.statusText || "Firebase Error");
+                toast("Changes Saved!");
             } catch(e) {
                 console.error(e);
                 toast("Save Failed: " + e.message, true);
